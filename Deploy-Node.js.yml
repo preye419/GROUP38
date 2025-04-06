@@ -1,73 +1,39 @@
 ---
 
-- name: Deploy Node.js App with Nginx Reverse Proxy
-  hosts: app1
+- name: Create app directory
+  file:
+    path: "{{ app_directory }}"
+    state: directory
+    owner: centos
+    group: centos
+    mode: '0755'
+
+- name: Clone the application code
+  git:
+    repo: "{{ repo_url }}"
+    dest: "{{ app_directory }}"
+    version: main
+    force: yes
   become: yes
 
-  vars:
-    app_directory: /var/www/myapp
-    repo_url: https://github.com/preye419/GROUP38.git
-    app_port: 3000
+- name: Install Node.js if not installed
+  yum:
+    name: nodejs
+    state: present
 
-  tasks:
-    - name: Update package cache
-      yum:
-        update_cache: yes
+- name: Install app dependencies
+  npm:
+    path: "{{ app_directory }}"
+    state: present
+    production: yes
+    executable: /usr/bin/npm
 
-    - name: Install Node.js and Git
-      yum:
-        name:
-          - nodejs
-          - git
-        state: present
-
-    - name: Clone the application code
-      git:
-        repo: "{{ repo_url }}"
-        dest: "{{ app_directory }}"
-        version: main
-
-    - name: Install app dependencies
-      npm:
-        path: "{{ app_directory }}"
-
-    - name: Start the Node.js app
-      shell: "nohup node {{ app_directory }}/app.js &"
-
-    - name: Install Nginx
-      yum:
-        name: nginx
-        state: present
-
-    - name: Start and enable Nginx
-      systemd:
-        name: nginx
-        state: started
-        enabled: yes
-
-    - name: Configure Nginx reverse proxy
-      copy:
-        dest: /etc/nginx/conf.d/myapp.conf
-        content: |
-          server {
-              listen 80;
-              server_name localhost;
-
-              location / {
-                  proxy_pass http://localhost:{{ app_port }};
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_cache_bypass $http_upgrade;
-              }
-          }
-      notify:
-        - Reload Nginx
-
-  handlers:
-    - name: Reload Nginx
-      systemd:
-        name: nginx
-        state: reloaded
-...
+- name: Ensure the app is running
+  shell: |
+    cd {{ app_directory }}
+    nohup npm start &
+  args:
+    chdir: "{{ app_directory }}"
+    background: yes
+    creates: "{{ app_directory }}/node_modules"
+...   
